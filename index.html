@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>肥鱼泡泡 · 点开就玩</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#071523;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-tap-highlight-color:transparent}
+  #c{display:block;width:100%;height:100%;touch-action:none}
+  .hud{position:fixed;left:0;right:0;top:0;padding:12px 16px;color:#cfeaff;display:flex;justify-content:space-between;font-size:14px;pointer-events:none}
+  .hud b{color:#7ef0c0;font-weight:600}
+  .tip{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#6f96b8;font-size:12px;pointer-events:none}
+  .over{position:fixed;inset:0;display:none;place-items:center;background:rgba(4,12,22,.82);color:#eaf6ff;text-align:center;padding:24px}
+  .over.on{display:grid}
+  .over h1{font-size:22px;margin:0 0 10px}
+  .over p{color:#9fc4e2;margin:6px 0}
+  button{margin-top:16px;padding:12px 28px;border-radius:999px;border:1px solid rgba(126,240,192,.6);background:rgba(126,240,192,.12);color:#9ff3d0;font-size:16px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><span>泡泡 <b id="score">0</b></span><span>生命 <b id="life">3</b></span></div>
+<div class="tip">点屏幕发射 / 别让泡泡掉到底</div>
+<div class="over" id="over"><div><h1>肥鱼泡泡</h1><p id="final">得分 0</p><button id="again">再来一局</button></div></div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, dpr = Math.min(2, window.devicePixelRatio || 1);
+function fit() { W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+addEventListener('resize', fit); fit();
+
+const colors = ['#7ef0c0', '#4cc2ff', '#9f8cff', '#ffd166', '#ff8fab'];
+let bubbles = [], score = 0, life = 3, over = false, t = 0;
+const scoreEl = document.getElementById('score'), lifeEl = document.getElementById('life');
+
+function spawn() {
+  const r = 14 + Math.random() * 26;
+  bubbles.push({ x: r + Math.random() * (W - r * 2), y: -r * 2, r,
+    vy: 40 + Math.random() * 70 + t * 0.6, c: colors[(Math.random() * colors.length) | 0], pop: 0 });
+}
+
+function boom(x, y, c) {
+  for (let i = 0; i < 14; i += 1) {
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 160;
+    bubbles.push({ x, y, r: 2 + Math.random() * 3, vy: 0, vx: Math.cos(a) * s, vy2: Math.sin(a) * s, life: .6, c, spark: true });
+  }
+}
+
+function tap(x, y) {
+  if (over) return;
+  for (let i = bubbles.length - 1; i >= 0; i -= 1) {
+    const b = bubbles[i];
+    if (b.spark) continue;
+    if ((x - b.x) ** 2 + (y - b.y) ** 2 <= (b.r + 18) ** 2) {
+      boom(b.x, b.y, b.c);
+      bubbles.splice(i, 1);
+      score += Math.max(1, Math.round(30 - b.r));
+      scoreEl.textContent = score;
+      return;
+    }
+  }
+}
+cv.addEventListener('pointerdown', (e) => tap(e.clientX, e.clientY));
+
+function reset() {
+  bubbles = []; score = 0; life = 3; over = false; t = 0;
+  scoreEl.textContent = 0; lifeEl.textContent = 3;
+  document.getElementById('over').classList.remove('on');
+  for (let i = 0; i < 5; i += 1) spawn();
+}
+document.getElementById('again').addEventListener('click', reset);
+
+let last = performance.now(), acc = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!over) t += dt;
+  ctx.clearRect(0, 0, W, H);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a2136'); g.addColorStop(1, '#04101c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  if (!over) {
+    acc += dt;
+    if (acc > Math.max(0.32, 1.1 - t * 0.02)) { acc = 0; spawn(); }
+  }
+  for (let i = bubbles.length - 1; i >= 0; i -= 1) {
+    const b = bubbles[i];
+    if (b.spark) {
+      b.life -= dt; b.x += (b.vx || 0) * dt; b.y += (b.vy2 || 0) * dt; b.vy2 = (b.vy2 || 0) + 420 * dt;
+      ctx.globalAlpha = Math.max(0, b.life / .6); ctx.fillStyle = b.c;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      if (b.life <= 0) bubbles.splice(i, 1);
+      continue;
+    }
+    b.y += b.vy * dt;
+    const grd = ctx.createRadialGradient(b.x - b.r * .3, b.y - b.r * .35, b.r * .15, b.x, b.y, b.r);
+    grd.addColorStop(0, '#ffffffcc'); grd.addColorStop(.55, b.c); grd.addColorStop(1, '#0b2236');
+    ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+    if (b.y - b.r > H) {
+      bubbles.splice(i, 1);
+      if (!over) { life -= 1; lifeEl.textContent = Math.max(0, life); if (life <= 0) { over = true; document.getElementById('final').textContent = '得分 ' + score + (score >= 200 ? ' · 肥鱼夸你手速快' : ''); document.getElementById('over').classList.add('on'); } }
+    }
+  }
+  requestAnimationFrame(loop);
+}
+reset(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
